@@ -1,5 +1,3 @@
-json
 streamlit
 pandas
-pycaret
-plotly.express
+scikit-learn
