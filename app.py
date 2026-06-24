@@ -1,35 +1,45 @@
 import json
 import streamlit as st
 import pandas as pd  # type: ignore
-from pycaret.clustering import load_model, predict_model  # type: ignore
+import joblib
 import plotly.express as px  # type: ignore
 
-MODEL_NAME = 'welcome_survey_clustering_pipeline_v1'
 DATA = 'welcome_survey_simple_v1.csv'
 CLUSTER_NAMES_AND_DESCRIPTIONS = 'welcome_survey_cluster_names_and_descriptions_v1.json'
 
 # Definicja poprawnej kolejności dla wykresów
 CATEGORY_ORDERS = {
     "age": ['<18', '18-24', '25-34', '35-44', '45-54', '55-64', '>=65', 'unknown'],
-    "edu_level": ['Podstawowe', 'Średnie', 'Wyższe']
+    "edu_level": ['Podstawowe', 'Średmie', 'Wyższe'] # Dopasowane do Twoich kategorii
 }
 
-@st.cache_data
+@st.cache_resource
 def get_model():
-    return load_model(MODEL_NAME)
+    # Używamy joblib zamiast load_model z pycaret
+    return joblib.load('welcome_survey_clustering_pipeline_v1.pkl')
 
 @st.cache_data
 def get_cluster_names_and_descriptions():
     with open(CLUSTER_NAMES_AND_DESCRIPTIONS, "r", encoding='utf-8') as f:
-        return json.loads(f.read())
+        return json.load(f)
 
 @st.cache_data
 def get_all_participants():
-    # Pobieramy model wewnątrz funkcji, naprawiając problem scope'u
+    # Pobieramy model załadowany przez joblib
     model_pipeline = get_model()
     all_df = pd.read_csv(DATA, sep=';')
-    df_with_clusters = predict_model(model_pipeline, data=all_df)
+    
+    # Standardowy predict() zwraca tablicę klastrów, którą dopisujemy do nowej kolumny
+    cluster_labels = model_pipeline.predict(all_df)
+    
+    df_with_clusters = all_df.copy()
+    df_with_clusters['Cluster'] = cluster_labels
     return df_with_clusters
+
+# --- LOGIKA APLIKACJI (Pobieranie danych na start) ---
+model_pipeline = get_model()
+all_df = get_all_participants()
+cluster_names_and_descriptions = get_cluster_names_and_descriptions()
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -50,20 +60,18 @@ with st.sidebar:
         'gender': gender,
     }])
 
-# --- LOGIKA APPLIKACJI ---
-model = get_model()
-all_df = get_all_participants()
-cluster_names_and_descriptions = get_cluster_names_and_descriptions()
+# Predykcja dla nowego użytkownika (Standardowy Scikit-learn/joblib)
+predicted_cluster_labels = model_pipeline.predict(person_df)
+predicted_cluster_id = str(predicted_cluster_labels[0])  # Konwersja na string, aby pasowało do kluczy w pliku JSON
 
-# Predykcja dla nowego użytkownika
-predicted_cluster_id = predict_model(model, data=person_df)["Cluster"].values[0]
 predicted_cluster_data = cluster_names_and_descriptions[predicted_cluster_id]
 
 # --- GŁÓWNY PANEL ---
 st.header(f"Najbliżej Ci do grupy: {predicted_cluster_data['name']}")
 st.markdown(f"*{predicted_cluster_data['description']}*")
 
-same_cluster_df = all_df[all_df["Cluster"] == predicted_cluster_id]
+# Filtrowanie po wyliczonym klastrze (Konwertujemy kolumnę na string na wypadek różnic w typach)
+same_cluster_df = all_df[all_df["Cluster"].astype(str) == predicted_cluster_id]
 st.metric("Liczba osób w Twojej grupie", len(same_cluster_df))
 
 st.write("---")
