@@ -1,8 +1,8 @@
 import json
 import streamlit as st
 import pandas as pd  # type: ignore
+import joblib
 import plotly.express as px  # type: ignore
-from pycaret.clustering import load_model # Przywracamy dedykowany loader PyCareta
 
 DATA = 'welcome_survey_simple_v1.csv'
 CLUSTER_NAMES_AND_DESCRIPTIONS = 'welcome_survey_cluster_names_and_descriptions_v1.json'
@@ -15,8 +15,14 @@ CATEGORY_ORDERS = {
 
 @st.cache_resource
 def get_model():
-    # Używamy dedykowanej funkcji PyCareta, podając nazwę BEZ rozszerzenia .pkl
-    return load_model('welcome_survey_clustering_pipeline_v1')
+    # 1. Ładujemy oryginalny pipeline za pomocą joblib
+    raw_pipeline = joblib.load('welcome_survey_clustering_pipeline_v1.pkl')
+    
+    # 2. Jeśli to obiekt PyCareta, wyciągamy z jego kroków czysty model Scikit-learn (np. KMeans),
+    # aby uniknąć jakichkolwiek błędów importu czy brakujących metod w chmurze.
+    if hasattr(raw_pipeline, 'steps'):
+        return raw_pipeline.steps[-1][1]
+    return raw_pipeline
 
 @st.cache_data
 def get_cluster_names_and_descriptions():
@@ -25,18 +31,17 @@ def get_cluster_names_and_descriptions():
 
 @st.cache_data
 def get_all_participants():
-    # Pobieramy model załadowany przez joblib
     model_pipeline = get_model()
     all_df = pd.read_csv(DATA, sep=';')
     
-    # Standardowy predict() zwraca tablicę klastrów, którą dopisujemy do nowej kolumny
+    # Generujemy czyste numery klastrów
     cluster_labels = model_pipeline.predict(all_df)
     
     df_with_clusters = all_df.copy()
     df_with_clusters['Cluster'] = cluster_labels
     return df_with_clusters
 
-# --- LOGIKA APLIKACJI (Pobieranie danych na start) ---
+# --- LOGIKA APLIKACJI ---
 model_pipeline = get_model()
 all_df = get_all_participants()
 cluster_names_and_descriptions = get_cluster_names_and_descriptions()
@@ -60,9 +65,11 @@ with st.sidebar:
         'gender': gender,
     }])
 
-# Predykcja dla nowego użytkownika (Standardowy Scikit-learn/joblib)
+# Predykcja dla nowego użytkownika przy użyciu czystego modelu
 predicted_cluster_labels = model_pipeline.predict(person_df)
-predicted_cluster_id = str(predicted_cluster_labels[0])  # Konwersja na string, aby pasowało do kluczy w pliku JSON
+
+# Dopasowanie do formatu kluczy w Twoim pliku JSON (np. "Cluster 7")
+predicted_cluster_id = f"Cluster {predicted_cluster_labels[0]}"
 
 predicted_cluster_data = cluster_names_and_descriptions[predicted_cluster_id]
 
@@ -70,14 +77,13 @@ predicted_cluster_data = cluster_names_and_descriptions[predicted_cluster_id]
 st.header(f"Najbliżej Ci do grupy: {predicted_cluster_data['name']}")
 st.markdown(f"*{predicted_cluster_data['description']}*")
 
-# Filtrowanie po wyliczonym klastrze (Konwertujemy kolumnę na string na wypadek różnic w typach)
-same_cluster_df = all_df[all_df["Cluster"].astype(str) == predicted_cluster_id]
+# Filtrowanie tabeli po czystym numerze klastra (w postaci tekstowej cyfry, np. "7")
+same_cluster_df = all_df[all_df["Cluster"].astype(str) == str(predicted_cluster_labels[0])]
 st.metric("Liczba osób w Twojej grupie", len(same_cluster_df))
 
 st.write("---")
 st.header("Statystyki Twojej grupy")
 
-# Mapowanie wykresów do pętli (Zasada DRY)
 charts_config = [
     {"col": "age", "title": "Rozkład wieku", "label": "Wiek"},
     {"col": "edu_level", "title": "Rozkład wykształcenia", "label": "Wykształcenie"},
@@ -86,17 +92,15 @@ charts_config = [
     {"col": "gender", "title": "Rozkład płci", "label": "Płeć"},
 ]
 
-# Tworzenie estetycznych zakładek zamiast długiej listy wykresów
 tabs = st.tabs([cfg["label"] for cfg in charts_config])
 
 for tab, cfg in zip(tabs, charts_config):
     with tab:
-        # Budowanie wykresu z uwzględnieniem zdefiniowanego sortowania (jeśli istnieje)
         fig = px.histogram(
             same_cluster_df, 
             x=cfg["col"],
             category_orders=CATEGORY_ORDERS,
-            color_discrete_sequence=['#0083B0'] # Przyjemny, spójny kolor dla aplikacji
+            color_discrete_sequence=['#0083B0']
         )
         fig.update_layout(
             title=cfg["title"],
