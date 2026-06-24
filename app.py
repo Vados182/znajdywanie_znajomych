@@ -11,7 +11,7 @@ CATEGORY_ORDERS = {
     "edu_level": ['Podstawowe', 'Średnie', 'Wyższe']
 }
 
-# Słownik odwzorowujący unikalne kategorie (uporządkowane dokładnie tak, jak ułożył je oryginalny enkoder)
+# Słownik odwzorowujący unikalne kategorie
 COLUMNS_MAPPING = {
     "age": ['<18', '18-24', '25-34', '35-44', '45-54', '55-64', '>=65', 'unknown'],
     "edu_level": ['Podstawowe', 'Średnie', 'Wyższe'],
@@ -20,7 +20,7 @@ COLUMNS_MAPPING = {
     "gender": ['Mężczyzna', 'Kobieta']
 }
 
-# Twoja oryginalna macierz z modelu (wymiar: 8 klastrów x 21 cech)
+# Macierz środków klastrów
 CENTROIDS = np.array([
     [-1.734723475976807e-18, 0.18750000000000003, 0.4375, 0.3125, 6.938893903907228e-18, 6.938893903907228e-18, 0.0625, -3.469446951953614e-18, -1.734723475976807e-18, 0.0625, 0.9375000000000001, 0.0, 1.0, 2.7755575615628914e-17, 2.7755575615628914e-17, -6.938893903907228e-18, -1.6653345369377348e-16, 0.9999999999999999, 1.1102230246251565e-16, -1.3877787807814457e-17, 0.6875],
     [-1.734723475976807e-18, 0.03333333333333342, 5.551115123125783e-17, 0.7, 0.0, 0.03333333333333334, 0.23333333333333345, -3.469446951953614e-18, -1.734723475976807e-18, 0.06666666666666665, 0.9333333333333333, 0.0, 0.8333333333333333, 0.0, 0.13333333333333336, 0.033333333333333326, 0.9666666666666669, -1.1102230246251565e-16, 5.551115123125783e-17, 0.03333333333333332, 0.7666666666666667],
@@ -33,7 +33,7 @@ CENTROIDS = np.array([
 ])
 
 def build_features_vector(row):
-    """Tworzy wektor binarny dopasowany długością (21) bezpośrednio do centroidów"""
+    """Tworzy wektor binarny One-Hot Encoding"""
     vector = []
     for col, values in COLUMNS_MAPPING.items():
         current_val = str(row[col]).strip()
@@ -44,13 +44,12 @@ def build_features_vector(row):
                 vector.append(0.0)
                 
     features_array = np.array(vector)
-    # Wymuszamy, by wektor miał dokładnie 21 elementów (tyle ile kolumn ma model)
     if len(features_array) != CENTROIDS.shape[1]:
         features_array = np.resize(features_array, CENTROIDS.shape[1])
     return features_array
 
 def predict_closest_cluster(row, centroids_matrix):
-    """Liczy euklidesową odległość i zwraca indeks klastra (0 do 7)"""
+    """Liczy odległość i zwraca indeks klastra (0 do 7)"""
     features_vector = build_features_vector(row)
     distances = [np.linalg.norm(features_vector - c) for c in centroids_matrix]
     return int(np.argmin(distances))
@@ -58,8 +57,11 @@ def predict_closest_cluster(row, centroids_matrix):
 @st.cache_data
 def get_cluster_names_and_descriptions():
     import json
-    with open(CLUSTER_NAMES_AND_DESCRIPTIONS, "r", encoding='utf-8') as f:
-        return json.load(f)
+    try:
+        with open(CLUSTER_NAMES_AND_DESCRIPTIONS, "r", encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
 @st.cache_data
 def get_all_participants():
@@ -94,16 +96,28 @@ with st.sidebar:
         'gender': gender,
     }
 
-# Poprawna predykcja indeksu klastra (zwraca liczbę int z zakresu 0-7)
+# Wyliczamy indeks klastra
 predicted_cluster_idx = predict_closest_cluster(person_row, CENTROIDS)
 
-# Konwersja na dokładny klucz z Twojego pliku JSON (np. "Cluster 0", "Cluster 1")
-predicted_cluster_id = f"Cluster {predicted_cluster_idx}"
-predicted_cluster_data = cluster_names_and_descriptions[predicted_cluster_id]
+# BEZPIECZNE POBIERANIE Z JSON
+# Próbujemy różnych wariantów klucza, a jeśli żadnego nie ma - tworzymy awaryjny tekst, zamiast rzucać błędem
+possible_keys = [f"Cluster {predicted_cluster_idx}", str(predicted_cluster_idx), f"cluster_{predicted_cluster_idx}"]
+predicted_cluster_data = None
+
+for key in possible_keys:
+    if key in cluster_names_and_descriptions:
+        predicted_cluster_data = cluster_names_and_descriptions[key]
+        break
+
+if not predicted_cluster_data:
+    predicted_cluster_data = {
+        "name": f"Grupa nr {predicted_cluster_idx}",
+        "description": "Osoby o zbliżonych odpowiedziach w ankiecie."
+    }
 
 # --- PANEL GŁÓWNY ---
-st.header(f"Najbliżej Ci do grupy: {predicted_cluster_data['name']}")
-st.markdown(f"*{predicted_cluster_data['description']}*")
+st.header(f"Najbliżej Ci do grupy: {predicted_cluster_data.get('name', f'Grupa {predicted_cluster_idx}')}")
+st.markdown(f"*{predicted_cluster_data.get('description', '')}*")
 
 same_cluster_df = all_df[all_df["Cluster"] == predicted_cluster_idx]
 st.metric("Liczba osób w Twojej grupie", len(same_cluster_df))
