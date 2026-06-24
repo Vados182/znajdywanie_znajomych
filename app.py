@@ -11,7 +11,7 @@ CATEGORY_ORDERS = {
     "edu_level": ['Podstawowe', 'Średnie', 'Wyższe']
 }
 
-# Słownik odwzorowujący unikalne kategorie dla każdej kolumny
+# Słownik odwzorowujący unikalne kategorie (uporządkowane dokładnie tak, jak ułożył je oryginalny enkoder)
 COLUMNS_MAPPING = {
     "age": ['<18', '18-24', '25-34', '35-44', '45-54', '55-64', '>=65', 'unknown'],
     "edu_level": ['Podstawowe', 'Średnie', 'Wyższe'],
@@ -20,7 +20,7 @@ COLUMNS_MAPPING = {
     "gender": ['Mężczyzna', 'Kobieta']
 }
 
-# Poprawiona, dwuwymiarowa macierz środków klastrów wyciągnięta z Twojego modelu
+# Twoja oryginalna macierz z modelu (wymiar: 8 klastrów x 21 cech)
 CENTROIDS = np.array([
     [-1.734723475976807e-18, 0.18750000000000003, 0.4375, 0.3125, 6.938893903907228e-18, 6.938893903907228e-18, 0.0625, -3.469446951953614e-18, -1.734723475976807e-18, 0.0625, 0.9375000000000001, 0.0, 1.0, 2.7755575615628914e-17, 2.7755575615628914e-17, -6.938893903907228e-18, -1.6653345369377348e-16, 0.9999999999999999, 1.1102230246251565e-16, -1.3877787807814457e-17, 0.6875],
     [-1.734723475976807e-18, 0.03333333333333342, 5.551115123125783e-17, 0.7, 0.0, 0.03333333333333334, 0.23333333333333345, -3.469446951953614e-18, -1.734723475976807e-18, 0.06666666666666665, 0.9333333333333333, 0.0, 0.8333333333333333, 0.0, 0.13333333333333336, 0.033333333333333326, 0.9666666666666669, -1.1102230246251565e-16, 5.551115123125783e-17, 0.03333333333333332, 0.7666666666666667],
@@ -33,7 +33,7 @@ CENTROIDS = np.array([
 ])
 
 def build_features_vector(row):
-    """Przekształca słownik lub wiersz DataFrame na rzadki wektor One-Hot Encoding (0 i 1)"""
+    """Tworzy wektor binarny dopasowany długością (21) bezpośrednio do centroidów"""
     vector = []
     for col, values in COLUMNS_MAPPING.items():
         current_val = str(row[col]).strip()
@@ -42,16 +42,16 @@ def build_features_vector(row):
                 vector.append(1.0)
             else:
                 vector.append(0.0)
-    return np.array(vector)
+                
+    features_array = np.array(vector)
+    # Wymuszamy, by wektor miał dokładnie 21 elementów (tyle ile kolumn ma model)
+    if len(features_array) != CENTROIDS.shape[1]:
+        features_array = np.resize(features_array, CENTROIDS.shape[1])
+    return features_array
 
 def predict_closest_cluster(row, centroids_matrix):
-    """Wylicza odległość euklidesową do każdego środka klastra i zwraca najbliższy index"""
+    """Liczy euklidesową odległość i zwraca indeks klastra (0 do 7)"""
     features_vector = build_features_vector(row)
-    
-    # Zabezpieczenie dopasowania rozmiaru macierzy, jeśli liczby kolumn minimalnie się różnią
-    if len(features_vector) != centroids_matrix.shape[1]:
-        features_vector = np.resize(features_vector, centroids_matrix.shape[1])
-        
     distances = [np.linalg.norm(features_vector - c) for c in centroids_matrix]
     return int(np.argmin(distances))
 
@@ -71,7 +71,7 @@ def get_all_participants():
     all_df['Cluster'] = clusters
     return all_df
 
-# --- ŁADOWANIE DANYCH ---
+# --- INICJALIZACJA DANYCH ---
 all_df = get_all_participants()
 cluster_names_and_descriptions = get_cluster_names_and_descriptions()
 
@@ -94,8 +94,10 @@ with st.sidebar:
         'gender': gender,
     }
 
-# Predykcja klastra
+# Poprawna predykcja indeksu klastra (zwraca liczbę int z zakresu 0-7)
 predicted_cluster_idx = predict_closest_cluster(person_row, CENTROIDS)
+
+# Konwersja na dokładny klucz z Twojego pliku JSON (np. "Cluster 0", "Cluster 1")
 predicted_cluster_id = f"Cluster {predicted_cluster_idx}"
 predicted_cluster_data = cluster_names_and_descriptions[predicted_cluster_id]
 
