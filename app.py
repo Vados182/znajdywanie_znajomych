@@ -1,8 +1,8 @@
 import json
 import streamlit as st
 import pandas as pd  # type: ignore
-import joblib
 import plotly.express as px  # type: ignore
+from pycaret.clustering import load_model, predict_model
 
 DATA = 'welcome_survey_simple_v1.csv'
 CLUSTER_NAMES_AND_DESCRIPTIONS = 'welcome_survey_cluster_names_and_descriptions_v1.json'
@@ -15,14 +15,8 @@ CATEGORY_ORDERS = {
 
 @st.cache_resource
 def get_model():
-    # 1. Ładujemy oryginalny pipeline za pomocą joblib
-    raw_pipeline = joblib.load('welcome_survey_clustering_pipeline_v1.pkl')
-    
-    # 2. Jeśli to obiekt PyCareta, wyciągamy z jego kroków czysty model Scikit-learn (np. KMeans),
-    # aby uniknąć jakichkolwiek błędów importu czy brakujących metod w chmurze.
-    if hasattr(raw_pipeline, 'steps'):
-        return raw_pipeline.steps[-1][1]
-    return raw_pipeline
+    # PyCaret ładuje plik bez podawania rozszerzenia .pkl
+    return load_model('welcome_survey_clustering_pipeline_v1')
 
 @st.cache_data
 def get_cluster_names_and_descriptions():
@@ -34,12 +28,12 @@ def get_all_participants():
     model_pipeline = get_model()
     all_df = pd.read_csv(DATA, sep=';')
     
-    # Generujemy czyste numery klastrów
-    cluster_labels = model_pipeline.predict(all_df)
+    # PyCaret dedykowany sposób na predykcję dla całej tabeli
+    predictions = predict_model(model_pipeline, data=all_df)
     
-    df_with_clusters = all_df.copy()
-    df_with_clusters['Cluster'] = cluster_labels
-    return df_with_clusters
+    # PyCaret dopisuje wynik do kolumny 'Cluster'
+    all_df['Cluster'] = predictions['Cluster']
+    return all_df
 
 # --- LOGIKA APLIKACJI ---
 model_pipeline = get_model()
@@ -65,11 +59,15 @@ with st.sidebar:
         'gender': gender,
     }])
 
-# Predykcja dla nowego użytkownika przy użyciu czystego modelu
-predicted_cluster_labels = model_pipeline.predict(person_df)
+# Predykcja dla nowego użytkownika przez PyCaret
+predicted_df = predict_model(model_pipeline, data=person_df)
 
-# Dopasowanie do formatu kluczy w Twoim pliku JSON (np. "Cluster 7")
-predicted_cluster_id = f"Cluster {predicted_cluster_labels[0]}"
+# Ponieważ w Twoim JSON klucze to np. "Cluster 7", upewniamy się, że format pasuje
+raw_cluster_id = predicted_df['Cluster'].iloc[0]
+predicted_cluster_id = str(raw_cluster_id)
+
+if not predicted_cluster_id.startswith("Cluster"):
+    predicted_cluster_id = f"Cluster {predicted_cluster_id}"
 
 predicted_cluster_data = cluster_names_and_descriptions[predicted_cluster_id]
 
@@ -77,8 +75,8 @@ predicted_cluster_data = cluster_names_and_descriptions[predicted_cluster_id]
 st.header(f"Najbliżej Ci do grupy: {predicted_cluster_data['name']}")
 st.markdown(f"*{predicted_cluster_data['description']}*")
 
-# Filtrowanie tabeli po czystym numerze klastra (w postaci tekstowej cyfry, np. "7")
-same_cluster_df = all_df[all_df["Cluster"].astype(str) == str(predicted_cluster_labels[0])]
+# Filtrowanie tabeli
+same_cluster_df = all_df[all_df["Cluster"].astype(str) == str(raw_cluster_id)]
 st.metric("Liczba osób w Twojej grupie", len(same_cluster_df))
 
 st.write("---")
