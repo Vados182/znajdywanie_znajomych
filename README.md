@@ -29,9 +29,3 @@ Aplikacja:
 
 ---
 
-## 💻 Jak uruchomić projekt lokalnie?
-
-1. Sklonuj to repozytorium:
-```bash
-   git clone [https://github.com/Vados182/](https://github.com/Vados182/)[NAZWA_TWOJEGO_REPOZYTORIUM].git
-   cd [NAZWA_TWOJEGO_REPOZYTORIUM]
