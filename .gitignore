@@ -1,0 +1,11 @@
+# Logi aplikacji
+logs.log
+*.log
+
+# Pliki środowiska wirtualnego (jeśli masz je w tym folderze)
+venv/
+.venv/
+env/
+
+# Opcjonalnie: Duże pliki binarne (jeśli pipeline waży zbyt dużo)
+# *.pkl
