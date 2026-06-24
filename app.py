@@ -1,8 +1,8 @@
 import json
 import streamlit as st
 import pandas as pd  # type: ignore
-import joblib
 import plotly.express as px  # type: ignore
+from pycaret.clustering import load_model # Przywracamy dedykowany loader PyCareta
 
 DATA = 'welcome_survey_simple_v1.csv'
 CLUSTER_NAMES_AND_DESCRIPTIONS = 'welcome_survey_cluster_names_and_descriptions_v1.json'
@@ -10,13 +10,13 @@ CLUSTER_NAMES_AND_DESCRIPTIONS = 'welcome_survey_cluster_names_and_descriptions_
 # Definicja poprawnej kolejności dla wykresów
 CATEGORY_ORDERS = {
     "age": ['<18', '18-24', '25-34', '35-44', '45-54', '55-64', '>=65', 'unknown'],
-    "edu_level": ['Podstawowe', 'Średmie', 'Wyższe'] # Dopasowane do Twoich kategorii
+    "edu_level": ['Podstawowe', 'Średnie', 'Wyższe']
 }
 
 @st.cache_resource
 def get_model():
-    # Używamy joblib zamiast load_model z pycaret
-    return joblib.load('welcome_survey_clustering_pipeline_v1.pkl')
+    # Używamy dedykowanej funkcji PyCareta, podając nazwę BEZ rozszerzenia .pkl
+    return load_model('welcome_survey_clustering_pipeline_v1')
 
 @st.cache_data
 def get_cluster_names_and_descriptions():
